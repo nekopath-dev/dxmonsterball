@@ -1,0 +1,316 @@
+//DXモンスターボール
+//最終更新　2024/07/17 9:33
+
+#include <M5Unified.h>
+#include <Servo.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+
+const lgfx::v1::U8g2font* FontJP = &fonts::lgfxJapanGothic_16;
+
+// WiFi設定
+const char* ssid = "WIFI名";
+const char* password = "WIFIパスワード";
+
+// LINE Notify設定
+const char* lineNotifyToken = "LINE Notifyトークン";
+const char* lineNotifyEndpoint = "https://notify-api.line.me/api/notify";
+
+// PokeAPI設定
+const char* pokeApiEndpoint = "https://pokeapi.co/api/v2/pokemon/";
+
+// サーボとスピーカーの設定
+static const int servoPin = 26;
+Servo Svo;
+const int spPin = 0;
+const int spPWMch = 0;
+
+// 投げ検知の設定
+const float THROW_THRESHOLD = 3.0;
+const unsigned long DETECTION_DURATION = 300;
+unsigned long detectionStartTime = 0;
+bool isDetecting = false;
+
+int currentProgram = 1;
+
+void setup() {
+  auto cfg = M5.config();
+  cfg.internal_imu = true;
+  M5.begin(cfg);
+  
+  //文字表示
+  M5.Lcd.setRotation(3);
+  M5.Lcd.fillScreen(BLACK);
+  M5.Lcd.setTextSize(1);
+  M5.Lcd.setFont(FontJP);
+
+  //WIFI
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    M5.Lcd.print(".");
+  }
+  M5.Lcd.printf("\nWiFi接続完了\n");
+  M5.Lcd.printf("投げ待機中...");
+  
+  delay(200);
+}
+
+void loop() {
+  M5.update();
+
+  //コードフロー
+  switch (currentProgram) {
+    case 1:
+      runProgram1();
+      break;
+    case 2:
+      runProgram2();
+      break;
+    case 3:
+      runProgram3();
+      break;
+  }
+
+  delay(10);
+}
+
+//プログラム１（投げ検知）
+void runProgram1() {
+  float accX, accY, accZ;
+  
+  if (M5.Imu.getAccelData(&accX, &accY, &accZ)) {
+    float totalAcc = sqrt(accX*accX + accY*accY + accZ*accZ);
+    
+    if (totalAcc > THROW_THRESHOLD) {
+      if (!isDetecting) {
+        detectionStartTime = millis();
+        isDetecting = true;
+      } else if (millis() - detectionStartTime >= DETECTION_DURATION) {
+        M5.Lcd.fillScreen(BLACK);
+        M5.Lcd.setCursor(0, 0);
+        M5.Lcd.printf("投げを検知しました。\n");
+        
+        delay(2000);
+        
+        M5.Lcd.fillScreen(BLACK);
+        M5.Lcd.setCursor(0, 0);
+        M5.Lcd.printf("プログラム2に移行します。\n");
+        
+        isDetecting = false;
+        currentProgram = 2;
+      }
+    } else {
+      isDetecting = false;
+    }
+  }
+}
+
+//プログラム２（ゲット確率の計算）
+void runProgram2() {
+  //3回動かす
+  moveMotor();
+  
+  //70%の確率でゲット成功
+  if (random(100) < 70) {
+    currentProgram = 3;
+  } else {
+    sendLineNotify("逃げられてしまった...");
+    M5.Lcd.fillScreen(BLACK);
+    M5.Lcd.setCursor(0, 0);
+    M5.Lcd.printf("逃げられてしまった...\n");
+    playFailureSound(); // 失敗音を鳴らす
+    delay(2000);
+    currentProgram = 1;
+    M5.Lcd.fillScreen(BLACK);
+    M5.Lcd.setCursor(0, 0);
+    M5.Lcd.printf("投げ待機中...");
+  }
+}
+
+//モータプログラム
+void moveMotor() {
+  Svo.attach(servoPin);             // サーボをピンに接続
+  Svo.write(0);                     // サーボの初期角度を0度に設定
+  Svo.write(50);                // 30度回転
+  delay(155);                    // 0.35秒待つ (回転待ち)
+  Svo.write(0);                // 0度回転
+  delay(1000);                    // 1秒待つ (回転待ち)
+  Svo.write(50);                // 30度回転
+  delay(155);                    // 0.35秒待つ (回転待ち)
+  Svo.write(0);                // 0度回転
+  delay(1000);                    // 1秒待つ (回転待ち)
+  Svo.write(50);                // 30度回転
+  delay(155);                    // 0.35秒待つ (回転待ち)
+  Svo.write(0);                // 0度回転
+  Svo.detach();  // サーボの使用を終了
+}
+
+//プログラム３（PokeAPIでポケモン名呼び出し）
+void runProgram3() {
+  String pokemonData;
+  bool success = false;
+  int errorCount = 0;
+  
+  while (!success && errorCount < 3) {
+    int pokemonId = random(1, 899);
+    M5.Lcd.fillScreen(BLACK);
+    M5.Lcd.setCursor(0, 0);
+    M5.Lcd.printf("データ取得中...");
+    
+    pokemonData = getPokemonData(pokemonId);
+    
+    if (pokemonData != "エラー") {
+      success = true;
+      M5.Lcd.fillScreen(BLACK);
+      M5.Lcd.setCursor(0, 0);
+      M5.Lcd.print(pokemonData);
+      
+      String message = "やった！" + pokemonData + "を捕まえた！";
+      sendLineNotify(message);
+      M5.Lcd.printf("\n%s", message.c_str());
+      
+      playSound();
+      
+      delay(5000);
+    } else {
+      errorCount++;
+      M5.Lcd.printf("\nエラーが発生しました。");
+      M5.Lcd.printf("\n再試行中... (%d/3)", errorCount);
+      Svo.attach(servoPin);             // サーボをピンに接続
+      Svo.write(0);                     // サーボの初期角度を0度に設定
+      Svo.write(50);                // 30度回転
+      delay(155);                    // 0.35秒待つ (回転待ち)
+      Svo.write(0);                // 0度回転
+      delay(500);
+      Svo.detach();  // サーボの使用を終了
+    }
+  }
+  
+  if (!success) {
+    sendLineNotify("逃げられてしまった...");
+    M5.Lcd.fillScreen(BLACK);
+    M5.Lcd.setCursor(0, 0);
+    M5.Lcd.printf("逃げられてしまった...\n");
+    playFailureSound(); // 失敗音を鳴らす
+    delay(2000);
+  }
+  
+  M5.Lcd.fillScreen(BLACK);
+  M5.Lcd.setCursor(0, 0);
+  M5.Lcd.printf("プログラム1に戻ります。\n");
+  delay(2000);
+  currentProgram = 1;
+  M5.Lcd.fillScreen(BLACK);
+  M5.Lcd.setCursor(0, 0);
+  M5.Lcd.printf("準備が完了しました。");
+}
+
+//PokeAPI Code
+String getPokemonData(int id) {
+  HTTPClient http;
+  String url = String(pokeApiEndpoint) + String(id);
+  http.begin(url);
+  
+  int httpCode = http.GET();
+  String payload = "";
+  
+  if (httpCode > 0) {
+    payload = http.getString();
+    DynamicJsonDocument doc(8192);
+    DeserializationError error = deserializeJson(doc, payload);
+    
+    if (error) {
+      return "エラー";
+    }
+    
+    // 日本語名を取得
+    String name = doc["name"].as<String>();
+    String speciesUrl = doc["species"]["url"].as<String>();
+    
+    // species APIを呼び出して日本語名を取得
+    http.begin(speciesUrl);
+    httpCode = http.GET();
+    if (httpCode > 0) {
+      payload = http.getString();
+      DynamicJsonDocument speciesDoc(8192);
+      error = deserializeJson(speciesDoc, payload);
+      
+      if (!error) {
+        JsonArray names = speciesDoc["names"];
+        for (JsonObject name : names) {
+          if (name["language"]["name"] == "ja") {
+            return name["name"].as<String>();
+          }
+        }
+      }
+    }
+    
+    // 日本語名が見つからない場合は英語名を返す
+    return name;
+  } else {
+    return "エラー";
+  }
+  
+  http.end();
+}
+
+void sendLineNotify(String message) {
+  HTTPClient http;
+  http.begin(lineNotifyEndpoint);
+  http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+  http.addHeader("Authorization", "Bearer " + String(lineNotifyToken));
+  
+  String postData = "message=" + message;
+  int httpCode = http.POST(postData);
+  
+  if (httpCode > 0) {
+    String response = http.getString();
+    M5.Lcd.printf("\nLINE通知送信成功");
+  } else {
+    M5.Lcd.printf("\nLINE通知送信失敗");
+  }
+  
+  http.end();
+}
+
+// 成功時の音楽生成コード
+void playSound() {
+  ledcSetup(spPWMch,5000,13);     // 初期化
+  ledcAttachPin(spPin,spPWMch);   // G0にスピーカを接続
+  ledcWriteNote(spPWMch,NOTE_A,5);
+  delay(500);
+  ledcWriteNote(spPWMch,NOTE_F,5);
+  delay(500);
+  ledcWriteNote(spPWMch,NOTE_C,5);
+  delay(900);
+  ledcWriteNote(spPWMch,NOTE_Bb,5);
+  delay(150);
+  ledcWriteNote(spPWMch,NOTE_Bb,5);
+  delay(150);
+  ledcWriteNote(spPWMch,NOTE_Bb,5);
+  delay(150);
+  ledcWriteNote(spPWMch,NOTE_G,5);
+  delay(150);
+  ledcWriteNote(spPWMch,NOTE_G,5);
+  delay(150);
+  ledcWriteNote(spPWMch,NOTE_Bb,5);
+  delay(150);
+  ledcWriteNote(spPWMch,NOTE_A,5);
+  delay(1000);
+  ledcWriteTone(spPWMch,0);
+  ledcDetachPin(spPin); //スピーカー切断
+}
+
+// 失敗時の音楽生成コード（ブッブー音）
+void playFailureSound() {
+  ledcSetup(spPWMch,5000,13);     // 初期化
+  ledcAttachPin(spPin,spPWMch);   // G0にスピーカを接続
+  ledcWriteNote(spPWMch,NOTE_C,5);
+  delay(300);
+  ledcWriteNote(spPWMch,NOTE_C,5);
+  delay(500);
+  ledcWriteTone(spPWMch,0);
+  ledcDetachPin(spPin); //スピーカー切断
+}
