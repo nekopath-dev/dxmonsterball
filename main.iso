@@ -1,6 +1,12 @@
 //DXモンスターボール
 //最終更新　2024/07/17 9:33
 
+//必要なパッケージ(AI解説)
+//M5Unified by M5Stack 0.1.16
+//M5GFX by M5Stack 0.1.16（M5Unifiedの依存ライブラリ）
+//ServoESP32 by Jaroslav Paral 1.0.3
+//ArduinoJson by Benoit Blanchon 7.0.4
+
 #include <M5Unified.h>
 #include <Servo.h>
 #include <WiFi.h>
