@@ -139,16 +139,16 @@ void runProgram2() {
 void moveMotor() {
   Svo.attach(servoPin);             // サーボをピンに接続
   Svo.write(0);                     // サーボの初期角度を0度に設定
-  Svo.write(50);                // 30度回転
-  delay(155);                    // 0.35秒待つ (回転待ち)
+  Svo.write(50);                // 50度回転
+  delay(155);                    // 0.155秒待つ (回転待ち)
   Svo.write(0);                // 0度回転
   delay(1000);                    // 1秒待つ (回転待ち)
-  Svo.write(50);                // 30度回転
-  delay(155);                    // 0.35秒待つ (回転待ち)
+  Svo.write(50);                // 50度回転
+  delay(155);                    // 0.155秒待つ (回転待ち)
   Svo.write(0);                // 0度回転
   delay(1000);                    // 1秒待つ (回転待ち)
-  Svo.write(50);                // 30度回転
-  delay(155);                    // 0.35秒待つ (回転待ち)
+  Svo.write(50);                // 50度回転
+  delay(155);                    // 0.155秒待つ (回転待ち)
   Svo.write(0);                // 0度回転
   Svo.detach();  // サーボの使用を終了
 }
@@ -186,8 +186,8 @@ void runProgram3() {
       M5.Lcd.printf("\n再試行中... (%d/3)", errorCount);
       Svo.attach(servoPin);             // サーボをピンに接続
       Svo.write(0);                     // サーボの初期角度を0度に設定
-      Svo.write(50);                // 30度回転
-      delay(155);                    // 0.35秒待つ (回転待ち)
+      Svo.write(50);                // 50度回転
+      delay(155);                    // 0.155秒待つ (回転待ち)
       Svo.write(0);                // 0度回転
       delay(500);
       Svo.detach();  // サーボの使用を終了
